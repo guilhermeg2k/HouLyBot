@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -45,13 +44,14 @@ func (b *Bot) setupBot(db *DataBase) error {
 func (b *Bot) startBot() {
 	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
 	if err != nil {
-		log.Fatalf(err.Error())
+		Log.FatalError(err.Error())
 	}
 	err = bot.Open()
 	if err != nil {
-		log.Fatalf(err.Error())
+		Log.FatalError(err.Error())
 	}
 	bot.AddHandler(b.messageCreate)
+	Log.Info("BOT STARTED")
 }
 
 func (b *Bot) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -61,9 +61,10 @@ func (b *Bot) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	command := strings.Split(m.Content, " ")
 	switch command[0] {
 	case "!team":
-		fmt.Println(command[1])
 		displayTeam, err := b.displayTeam(command[1])
-		fmt.Println(err)
+		if err != nil {
+			Log.Error(err.Error())
+		}
 		s.ChannelMessageSend(m.ChannelID, displayTeam)
 	}
 }
@@ -76,7 +77,7 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 	}
 	teamInfo, err := getTeamInfo(url)
 	if err != nil {
-		log.Println(err)
+		return "", err
 	}
 	teamMatches, err := getTeamMatches(url)
 	display = fmt.Sprintf("**%s %s**\n%s [ ", teamInfo.name, teamInfo.ranking, teamInfo.country)
@@ -87,28 +88,26 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 	display += "**Next Matches**\n```"
 	if teamMatches[0].score[0] != "-" {
 		display += "No upcoming matches, check back later."
-	} else {
-		i := 0
-		for {
-			display += fmt.Sprintf("[%s] %s x %s\n", teamMatches[i].date, teamMatches[i].firstTeam, teamMatches[i].secondTeam)
-			i++
-			if i > len(teamMatches)-1 || teamMatches[i].score[0] != "-" {
-				break
-			}
+	}
+	i := 0
+	for {
+		if i > len(teamMatches)-1 || teamMatches[i].score[0] != "-" {
+			break
 		}
-		if i < len(teamMatches)-1 {
-			display += "```**Recent results**\n```"
-			for i < len(teamMatches)-1 {
-				display += fmt.Sprintf("[%s] %s %s:%s %s\n",
-					teamMatches[i].date,
-					teamMatches[i].firstTeam,
-					teamMatches[i].score[0],
-					teamMatches[i].score[1],
-					teamMatches[i].secondTeam,
-				)
-				i++
-			}
-		}
+		display += fmt.Sprintf("[%s] %s x %s\n", teamMatches[i].date, teamMatches[i].firstTeam, teamMatches[i].secondTeam)
+		i++
+	}
+	//TODO: Handle when you don't have any recent match, which is rare
+	display += "```**Recent results**\n```"
+	for i < len(teamMatches)-1 {
+		display += fmt.Sprintf("[%s] %s %s:%s %s\n",
+			teamMatches[i].date,
+			teamMatches[i].firstTeam,
+			teamMatches[i].score[0],
+			teamMatches[i].score[1],
+			teamMatches[i].secondTeam,
+		)
+		i++
 	}
 	return display + "```", nil
 }

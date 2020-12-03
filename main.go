@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"fmt"
 )
 
 func main() {
@@ -9,11 +9,12 @@ func main() {
 	var bot Bot
 	err := db.setupDB()
 	if err != nil {
-		log.Fatalln(err.Error())
+		fmt.Errorf(err.Error())
 	}
+	setupLogger(&db)
 	err = bot.setupBot(&db)
 	if err != nil {
-		log.Fatalln(err.Error())
+		Log.Error(err.Error())
 	}
 	handleInput(&db, &bot)
 }

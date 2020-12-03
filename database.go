@@ -13,14 +13,39 @@ func (db *DataBase) setupDB() error {
 	if err != nil {
 		return err
 	}
-	createTeamsTable, err := database.Prepare(`
-		CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY, name TEXT UNIQUE, url TEXT);
-		CREATE TABLE IF NOT EXISTS commands (id INTEGER PRIMARY KEY, command TEXT UNIQUE, syntax TEXT, description TEXT);
-	`)
+	createTableStatement := `
+		CREATE TABLE IF NOT EXISTS teams (
+			id INTEGER PRIMARY KEY, 
+			name TEXT UNIQUE NOT NULL, 
+			url TEXT NOT NULL
+		);
+	`
+	_, err = database.Exec(createTableStatement)
+	createTableStatement = `
+		CREATE TABLE IF NOT EXISTS commands (
+			id INTEGER PRIMARY KEY, 
+			command TEXT UNIQUE NOT NULL, 
+			syntax TEXT NOT NULL, 
+			description TEXT NOT NULL
+		);
+	`
+	_, err = database.Exec(createTableStatement)
 	if err != nil {
 		return err
 	}
-	createTeamsTable.Exec()
+	createTableStatement = `
+		CREATE TABLE IF NOT EXISTS logs(
+			id INTEGER PRIMARY KEY,
+			type INTEGER NOT NULL,
+			file TEXT NOT NULL,
+			time TEXT NOT NULL,
+			log TEXT NOT NULL
+		);
+	`
+	_, err = database.Exec(createTableStatement)
+	if err != nil {
+		return err
+	}
 	db.DB = database
 	return nil
 }
@@ -58,4 +83,16 @@ func (db *DataBase) getTeamURL(teamName string) (string, error) {
 		return "", err
 	}
 	return url, nil
+}
+
+func (db *DataBase) createLog(log LogData) error {
+	createTeam, err := db.DB.Prepare("INSERT INTO logs(type, file, time, log) VALUES (?,?,?,?)")
+	if err != nil {
+		return err
+	}
+	_, err = createTeam.Exec(log.logType, log.file, log.time, log.log)
+	if err != nil {
+		return err
+	}
+	return nil
 }

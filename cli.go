@@ -22,14 +22,14 @@ func handleInput(db *DataBase, bot *Bot) {
 		command, err := reader.ReadString('\n')
 		command = strings.Replace(command, "\n", "", -1)
 		if err != nil {
-			log.Println(err.Error())
+			Log.Error(err.Error())
 		}
 		commandArgs := strings.Split(command, " ")
 		switch commandArgs[0] {
 		case "populateteams":
 			err = populateTeamsWithTop30(db, commandArgs[1], commandArgs[2], commandArgs[3])
 			if err != nil {
-				log.Println(err.Error())
+				Log.Error(err.Error())
 			}
 		case "exit":
 			log.Fatalln("Exiting by user request")
