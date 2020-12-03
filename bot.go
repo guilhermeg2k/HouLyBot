@@ -1,7 +1,7 @@
 package main
 
 import (
-	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +13,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+type Bot struct {
+	teams []Team
+}
 
 type TeamInfo struct {
 	name    string
@@ -28,19 +32,17 @@ type Match struct {
 	date       string
 }
 
-func setupDB() (*sql.DB, error) {
-	database, err := sql.Open("sqlite3", "./db.db")
+func (b *Bot) setupBot(db *DataBase) error {
+	teams, err := db.loadAllTeams()
 	if err != nil {
-		return database, err
+		return err
 	}
-	createTeamsTable, err := database.Prepare("CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY, name TEXT, url TEXT)")
-	if err != nil {
-		return database, err
-	}
-	createTeamsTable.Exec()
-	return database, nil
+	go b.startBot()
+	b.teams = teams
+	return nil
 }
-func main() {
+
+func (b *Bot) startBot() {
 	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
 	if err != nil {
 		log.Fatalf(err.Error())
@@ -49,33 +51,33 @@ func main() {
 	if err != nil {
 		log.Fatalf(err.Error())
 	}
-	bot.AddHandler(messageCreate)
-	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
-	var s string
-	fmt.Scanf("%s", &s)
-	bot.Close()
+	bot.AddHandler(b.messageCreate)
 }
 
-func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+func (b *Bot) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
 	command := strings.Split(m.Content, " ")
 	switch command[0] {
 	case "!team":
-		displayTeam, _ := displayTeam(command[1])
+		fmt.Println(command[1])
+		displayTeam, err := b.displayTeam(command[1])
+		fmt.Println(err)
 		s.ChannelMessageSend(m.ChannelID, displayTeam)
 	}
 }
 
-func displayTeam(teamName string) (string, error) {
+func (b *Bot) displayTeam(teamName string) (string, error) {
 	var display string
-	db, _ := setupDB()
-	url, err := getTeamURL(db, teamName)
-	if err != nil {
-		return "", err
+	url := b.getTeamUrl(teamName)
+	if url == "" {
+		return "", errors.New("Team url not founded")
 	}
 	teamInfo, err := getTeamInfo(url)
+	if err != nil {
+		log.Println(err)
+	}
 	teamMatches, err := getTeamMatches(url)
 	display = fmt.Sprintf("**%s %s**\n%s [ ", teamInfo.name, teamInfo.ranking, teamInfo.country)
 	for _, player := range teamInfo.roster {
@@ -109,15 +111,6 @@ func displayTeam(teamName string) (string, error) {
 		}
 	}
 	return display + "```", nil
-}
-
-func getTeamURL(database *sql.DB, teamName string) (string, error) {
-	var url string
-	err := database.QueryRow("SELECT url FROM teams where name = ?", teamName).Scan(&url)
-	if err != nil {
-		return "", err
-	}
-	return url, nil
 }
 
 func getTeamInfo(url string) (TeamInfo, error) {
@@ -174,9 +167,9 @@ func getTeamMatches(url string) ([]Match, error) {
 
 func getRequestBody(url string) (io.ReadCloser, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", url+"#tab-matchesBox", nil)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return req.Body, err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 Gecko/20100101 Firefox/84.0")
 	res, err := client.Do(req)
@@ -184,4 +177,13 @@ func getRequestBody(url string) (io.ReadCloser, error) {
 		return res.Body, err
 	}
 	return res.Body, nil
+}
+
+func (b *Bot) getTeamUrl(teamName string) string {
+	for _, team := range b.teams {
+		if strings.ToLower(team.name) == strings.ToLower(teamName) {
+			return team.url
+		}
+	}
+	return ""
 }
