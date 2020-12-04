@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -42,6 +43,7 @@ func (b *Bot) setupBot(db *DataBase) error {
 }
 
 func (b *Bot) startBot() {
+	b.todayMatches(false)
 	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
 	if err != nil {
 		Log.FatalError(err.Error())
@@ -61,12 +63,63 @@ func (b *Bot) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	command := strings.Split(m.Content, " ")
 	switch command[0] {
 	case "!team":
-		displayTeam, err := b.displayTeam(command[1])
+		teamName := strings.Join(command[1:], " ")
+		displayTeam, err := b.displayTeam(teamName)
 		if err != nil {
 			Log.Error(err.Error())
 		}
 		s.ChannelMessageSend(m.ChannelID, displayTeam)
+	case "!matches":
+		todayMatches, err := b.todayMatches(true)
+		if err != nil {
+			Log.Error(err.Error())
+		}
+		s.ChannelMessageSend(m.ChannelID, todayMatches)
 	}
+}
+
+func (b *Bot) todayMatches(matchFilter bool) (string, error) {
+	var matchesDisplay string
+	matches, err := getTodayMatches()
+	if err != nil {
+		return "", err
+	}
+	matchesDisplay = "**Today's Matches**\n```"
+	for _, match := range matches {
+		matchesDisplay += fmt.Sprintf("%s %s x %s\n", match.date, match.firstTeam, match.secondTeam)
+	}
+	matchesDisplay += "```"
+	return matchesDisplay, nil
+}
+
+func getTodayMatches() ([]Match, error) {
+	var matches []Match
+	body, err := getRequestBody("https://www.hltv.org/")
+	if err != nil {
+		return matches, err
+	}
+	doc, err := goquery.NewDocumentFromReader(body)
+	doc.Find(".rightCol").Find("aside").Find(".hotmatch-box").Each(func(i int, s *goquery.Selection) {
+		var match Match
+		s.Find(".team").EachWithBreak(func(i int, ss *goquery.Selection) bool {
+			if i == 0 {
+				match.firstTeam = ss.Text()
+			}
+			if i == 1 {
+				match.secondTeam = ss.Text()
+				return false
+			}
+			return true
+		})
+		matchTime := s.Find(".middleExtra").Text()
+		if matchTime != "" {
+			match.date = addHourToTime(matchTime, -4)
+		} else {
+			match.date = "LIVE"
+		}
+		matches = append(matches, match)
+	})
+	return matches, nil
 }
 
 func (b *Bot) displayTeam(teamName string) (string, error) {
@@ -185,4 +238,14 @@ func (b *Bot) getTeamUrl(teamName string) string {
 		}
 	}
 	return ""
+}
+
+func addHourToTime(time string, hourToAdd int) string {
+	hourAndMinutes := strings.Split(time, ":")
+	hour, err := strconv.Atoi(hourAndMinutes[0])
+	if err != nil {
+		Log.Error("Failed to parse hour to int")
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", hourToAdd+hour, hourAndMinutes[1])
 }
