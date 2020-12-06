@@ -43,7 +43,10 @@ func populateTeamsWithTop30(db *DataBase, year, month, day string) error {
 		return err
 	}
 	for _, team := range top30Teams {
-		db.createTeam(team.name, team.url)
+		err := db.createTeam(team.name, team.url)
+		if err != nil {
+			Log.Error("Failed when trying to populate the team " + team.name + " with the url " + team.url)
+		}
 	}
 	return nil
 }
@@ -55,6 +58,9 @@ func getTop30Teams(year, month, day string) ([]Team, error) {
 		return teams, err
 	}
 	doc, err := goquery.NewDocumentFromReader(body)
+	if err != nil {
+		return teams, err
+	}
 	doc.Find(".ranked-team.standard-box").Each(func(i int, s *goquery.Selection) {
 		name := strings.TrimSpace(s.Find(".name").Text())
 		url, _ := s.Find(".moreLink").Attr("href")

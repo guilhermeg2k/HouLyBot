@@ -21,6 +21,9 @@ func (db *DataBase) setupDB() error {
 		);
 	`
 	_, err = database.Exec(createTableStatement)
+	if err != nil {
+		return err
+	}
 	createTableStatement = `
 		CREATE TABLE IF NOT EXISTS commands (
 			id INTEGER PRIMARY KEY, 
@@ -58,7 +61,10 @@ func (db *DataBase) loadAllTeams() ([]Team, error) {
 	}
 	for allTeams.Next() {
 		var team Team
-		allTeams.Scan(&team.name, &team.url)
+		err = allTeams.Scan(&team.name, &team.url)
+		if err != nil {
+			Log.Error("Failed to load the team " + team.name + " with the url " + team.url)
+		}
 		teams = append(teams, team)
 	}
 	return teams, nil
@@ -74,15 +80,6 @@ func (db *DataBase) createTeam(name, url string) error {
 		return err
 	}
 	return nil
-}
-
-func (db *DataBase) getTeamURL(teamName string) (string, error) {
-	var url string
-	err := db.DB.QueryRow("SELECT url FROM teams where name = ?", teamName).Scan(&url)
-	if err != nil {
-		return "", err
-	}
-	return url, nil
 }
 
 func (db *DataBase) createLog(log LogData) error {

@@ -43,7 +43,6 @@ func (b *Bot) setupBot(db *DataBase) error {
 }
 
 func (b *Bot) startBot() {
-	b.todayMatches(false)
 	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
 	if err != nil {
 		Log.FatalError(err.Error())
@@ -99,6 +98,9 @@ func getTodayMatches() ([]Match, error) {
 		return matches, err
 	}
 	doc, err := goquery.NewDocumentFromReader(body)
+	if err != nil {
+		return matches, err
+	}
 	doc.Find(".rightCol").Find("aside").Find(".hotmatch-box").Each(func(i int, s *goquery.Selection) {
 		var match Match
 		s.Find(".team").EachWithBreak(func(i int, ss *goquery.Selection) bool {
@@ -113,7 +115,7 @@ func getTodayMatches() ([]Match, error) {
 		})
 		matchTime := s.Find(".middleExtra").Text()
 		if matchTime != "" {
-			match.date = addHourToTime(matchTime, -4)
+			match.date = convertTimeZone(matchTime)
 		} else {
 			match.date = "LIVE"
 		}
@@ -133,6 +135,9 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 		return "", err
 	}
 	teamMatches, err := getTeamMatches(url)
+	if err != nil {
+		return "", err
+	}
 	display = fmt.Sprintf("**%s %s**\n%s [ ", teamInfo.name, teamInfo.ranking, teamInfo.country)
 	for _, player := range teamInfo.roster {
 		display += player + " "
@@ -207,6 +212,9 @@ func getTeamMatches(url string) ([]Match, error) {
 		s.Find(".score").Each(func(i int, s *goquery.Selection) {
 			score = append(score, strings.TrimSpace(s.Text()))
 		})
+		if strings.Contains(date, ":") {
+			date = convertTimeZone(date)
+		}
 		matches = append(matches, Match{
 			firstTeam:  team1,
 			secondTeam: team2,
@@ -233,19 +241,19 @@ func getRequestBody(url string) (io.ReadCloser, error) {
 
 func (b *Bot) getTeamUrl(teamName string) string {
 	for _, team := range b.teams {
-		if strings.ToLower(team.name) == strings.ToLower(teamName) {
+		if strings.EqualFold(teamName, team.name) {
 			return team.url
 		}
 	}
 	return ""
 }
 
-func addHourToTime(time string, hourToAdd int) string {
+func convertTimeZone(time string) string {
 	hourAndMinutes := strings.Split(time, ":")
 	hour, err := strconv.Atoi(hourAndMinutes[0])
 	if err != nil {
 		Log.Error("Failed to parse hour to int")
 		return ""
 	}
-	return fmt.Sprintf("%d:%s", hourToAdd+hour, hourAndMinutes[1])
+	return fmt.Sprintf("%d:%s", TIMEZONE+hour, hourAndMinutes[1])
 }

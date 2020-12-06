@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+const TIMEZONE int = -4
+
 func main() {
 	var db DataBase
 	var bot Bot

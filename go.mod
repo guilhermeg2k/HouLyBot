@@ -1,4 +1,4 @@
-module houlybot
+module github.com/guilhermeg2k/houlybot
 
 go 1.15
 
