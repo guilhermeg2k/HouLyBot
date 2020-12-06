@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -32,7 +31,8 @@ func handleInput(db *DataBase, bot *Bot) {
 				Log.Error(err.Error())
 			}
 		case "exit":
-			log.Fatalln("Exiting by user request")
+			Log.Info("Exiting by user request")
+			os.Exit(1)
 		}
 	}
 }
@@ -45,7 +45,7 @@ func populateTeamsWithTop30(db *DataBase, year, month, day string) error {
 	for _, team := range top30Teams {
 		err := db.createTeam(team.name, team.url)
 		if err != nil {
-			Log.Error("Failed when trying to populate the team " + team.name + " with the url " + team.url)
+			Log.Error("Failed when trying to populate the team " + team.name + " with the url " + team.url + " error: " + err.Error())
 		}
 	}
 	return nil

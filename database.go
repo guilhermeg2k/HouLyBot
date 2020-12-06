@@ -17,7 +17,7 @@ func (db *DataBase) setupDB() error {
 		CREATE TABLE IF NOT EXISTS teams (
 			id INTEGER PRIMARY KEY, 
 			name TEXT UNIQUE NOT NULL, 
-			url TEXT NOT NULL
+			url TEXT NOT NULL UNIQUE
 		);
 	`
 	_, err = database.Exec(createTableStatement)
@@ -27,7 +27,7 @@ func (db *DataBase) setupDB() error {
 	createTableStatement = `
 		CREATE TABLE IF NOT EXISTS commands (
 			id INTEGER PRIMARY KEY, 
-			command TEXT UNIQUE NOT NULL, 
+			command TEXT UNIQUE NOT NULL UNIQUE,
 			syntax TEXT NOT NULL, 
 			description TEXT NOT NULL
 		);

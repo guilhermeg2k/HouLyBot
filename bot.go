@@ -43,6 +43,7 @@ func (b *Bot) setupBot(db *DataBase) error {
 }
 
 func (b *Bot) startBot() {
+	getRecentResults()
 	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
 	if err != nil {
 		Log.FatalError(err.Error())
@@ -55,8 +56,8 @@ func (b *Bot) startBot() {
 	Log.Info("BOT STARTED")
 }
 
-func (b *Bot) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == s.State.User.ID {
+func (b *Bot) messageCreate(session *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author.ID == session.State.User.ID {
 		return
 	}
 	command := strings.Split(m.Content, " ")
@@ -67,14 +68,90 @@ func (b *Bot) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if err != nil {
 			Log.Error(err.Error())
 		}
-		s.ChannelMessageSend(m.ChannelID, displayTeam)
+		err = b.sendMessageToChannel(session, m.ChannelID, displayTeam)
+		if err != nil {
+			Log.Error(err.Error())
+		}
 	case "!matches":
 		todayMatches, err := b.todayMatches(true)
 		if err != nil {
 			Log.Error(err.Error())
 		}
-		s.ChannelMessageSend(m.ChannelID, todayMatches)
+		err = b.sendMessageToChannel(session, m.ChannelID, todayMatches)
+		if err != nil {
+			Log.Error(err.Error())
+		}
+	case "!results":
+		recentResults, err := b.recentResults()
+		if len(recentResults) > 2000 {
+			fmt.Println(recentResults)
+		}
+		if err != nil {
+			Log.Error(err.Error())
+		}
+		err = b.sendMessageToChannel(session, m.ChannelID, recentResults)
+		if err != nil {
+			Log.Error(err.Error())
+		}
 	}
+}
+
+func (b *Bot) recentResults() (string, error) {
+	var resultsDisplay string
+	matches, err := getRecentResults()
+	if err != nil {
+		return "", err
+	}
+	resultsDisplay = "**Recent Results**\n```"
+	for _, match := range matches {
+		resultsDisplay += fmt.Sprintf(
+			"%s [%s] x [%s] %s\n",
+			match.firstTeam,
+			match.score[0],
+			match.score[1],
+			match.secondTeam,
+		)
+	}
+	resultsDisplay += "```"
+	return resultsDisplay, nil
+}
+
+func getRecentResults() ([]Match, error) {
+	var matches []Match
+	body, err := getRequestBody("https://www.hltv.org")
+	if err != nil {
+		return matches, err
+	}
+	doc, err := goquery.NewDocumentFromReader(body)
+	if err != nil {
+		return matches, err
+	}
+	doc.Find(".rightCol").Find(".result-box").Each(func(i int, s *goquery.Selection) {
+		var match Match
+		match.score = make([]string, 2)
+		s.Find(".team").EachWithBreak(func(i int, ss *goquery.Selection) bool {
+			if i == 0 {
+				match.firstTeam = ss.Text()
+			}
+			if i == 1 {
+				match.secondTeam = ss.Text()
+				return false
+			}
+			return true
+		})
+		s.Find(".twoRowExtraRow").EachWithBreak(func(i int, ss *goquery.Selection) bool {
+			if i == 0 {
+				match.score[0] = ss.Text()
+			}
+			if i == 1 {
+				match.score[1] = ss.Text()
+				return false
+			}
+			return true
+		})
+		matches = append(matches, match)
+	})
+	return matches, nil
 }
 
 func (b *Bot) todayMatches(matchFilter bool) (string, error) {
@@ -239,6 +316,16 @@ func getRequestBody(url string) (io.ReadCloser, error) {
 	return res.Body, nil
 }
 
+func convertTimeZone(time string) string {
+	hourAndMinutes := strings.Split(time, ":")
+	hour, err := strconv.Atoi(hourAndMinutes[0])
+	if err != nil {
+		Log.Error("Failed to parse hour to int")
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", TIMEZONE+hour, hourAndMinutes[1])
+}
+
 func (b *Bot) getTeamUrl(teamName string) string {
 	for _, team := range b.teams {
 		if strings.EqualFold(teamName, team.name) {
@@ -248,12 +335,13 @@ func (b *Bot) getTeamUrl(teamName string) string {
 	return ""
 }
 
-func convertTimeZone(time string) string {
-	hourAndMinutes := strings.Split(time, ":")
-	hour, err := strconv.Atoi(hourAndMinutes[0])
-	if err != nil {
-		Log.Error("Failed to parse hour to int")
-		return ""
+func (b *Bot) sendMessageToChannel(session *discordgo.Session, channelId string, content string) error {
+	if len(content) > 2000 {
+		return errors.New("Content string must be 2000 or fewer in length.")
 	}
-	return fmt.Sprintf("%d:%s", TIMEZONE+hour, hourAndMinutes[1])
+	_, err := session.ChannelMessageSend(channelId, content)
+	if err != nil {
+		return err
+	}
+	return nil
 }
