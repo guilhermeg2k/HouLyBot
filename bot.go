@@ -43,7 +43,6 @@ func (b *Bot) setupBot(db *DataBase) error {
 }
 
 func (b *Bot) startBot() {
-	getRecentResults()
 	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
 	if err != nil {
 		Log.FatalError(err.Error())
@@ -196,6 +195,9 @@ func getTodayMatches() ([]Match, error) {
 		} else {
 			match.date = "LIVE"
 		}
+		if match.firstTeam == "" {
+			return
+		}
 		matches = append(matches, match)
 	})
 	return matches, nil
@@ -322,6 +324,12 @@ func convertTimeZone(time string) string {
 	if err != nil {
 		Log.Error("Failed to parse hour to int")
 		return ""
+	}
+	if TIMEZONE+hour == 0 {
+		return fmt.Sprintf("00:%s", hourAndMinutes[1])
+	}
+	if TIMEZONE+hour < 0 {
+		return fmt.Sprintf("%d:%s", TIMEZONE+hour+24, hourAndMinutes[1])
 	}
 	return fmt.Sprintf("%d:%s", TIMEZONE+hour, hourAndMinutes[1])
 }
