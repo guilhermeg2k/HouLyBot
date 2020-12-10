@@ -16,6 +16,7 @@ import (
 
 type Bot struct {
 	teams []Team
+	db    *DataBase
 }
 
 type TeamInfo struct {
@@ -33,12 +34,13 @@ type Match struct {
 }
 
 func (b *Bot) setupBot(db *DataBase) error {
-	teams, err := db.loadAllTeams()
+	teams, err := db.getAllTeams()
 	if err != nil {
 		return err
 	}
-	go b.startBot()
 	b.teams = teams
+	b.db = db
+	go b.startBot()
 	return nil
 }
 
@@ -92,12 +94,26 @@ func (b *Bot) messageCreate(session *discordgo.Session, m *discordgo.MessageCrea
 		if err != nil {
 			Log.Error(err.Error())
 		}
+	case "!help":
+		commandsDiplay, err := b.displayCommands()
+		if err != nil {
+			Log.Error(err.Error())
+		}
+		err = b.sendMessageToChannel(session, m.ChannelID, commandsDiplay)
+		if err != nil {
+			Log.Error(err.Error())
+		}
+	case "!about":
+		err := b.sendMessageToChannel(session, m.ChannelID, b.displayAbout())
+		if err != nil {
+			Log.Error(err.Error())
+		}
 	}
 }
 
 func (b *Bot) recentResults() (string, error) {
 	var resultsDisplay string
-	matches, err := getRecentResults()
+	matches, err := b.getRecentResults()
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +131,7 @@ func (b *Bot) recentResults() (string, error) {
 	return resultsDisplay, nil
 }
 
-func getRecentResults() ([]Match, error) {
+func (b *Bot) getRecentResults() ([]Match, error) {
 	var matches []Match
 	body, err := getRequestBody("https://www.hltv.org")
 	if err != nil {
@@ -155,7 +171,7 @@ func getRecentResults() ([]Match, error) {
 
 func (b *Bot) todayMatches(matchFilter bool) (string, error) {
 	var matchesDisplay string
-	matches, err := getTodayMatches()
+	matches, err := b.getTodayMatches()
 	if err != nil {
 		return "", err
 	}
@@ -167,7 +183,7 @@ func (b *Bot) todayMatches(matchFilter bool) (string, error) {
 	return matchesDisplay, nil
 }
 
-func getTodayMatches() ([]Match, error) {
+func (b *Bot) getTodayMatches() ([]Match, error) {
 	var matches []Match
 	body, err := getRequestBody("https://www.hltv.org/")
 	if err != nil {
@@ -209,11 +225,11 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 	if url == "" {
 		return "", errors.New("Team url not founded")
 	}
-	teamInfo, err := getTeamInfo(url)
+	teamInfo, err := b.getTeamInfo(url)
 	if err != nil {
 		return "", err
 	}
-	teamMatches, err := getTeamMatches(url)
+	teamMatches, err := b.getTeamMatches(url)
 	if err != nil {
 		return "", err
 	}
@@ -249,7 +265,7 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 	return display + "```", nil
 }
 
-func getTeamInfo(url string) (TeamInfo, error) {
+func (b *Bot) getTeamInfo(url string) (TeamInfo, error) {
 	var teamInfo TeamInfo
 	var roster []string
 	body, err := getRequestBody(url)
@@ -271,7 +287,7 @@ func getTeamInfo(url string) (TeamInfo, error) {
 	return teamInfo, nil
 }
 
-func getTeamMatches(url string) ([]Match, error) {
+func (b *Bot) getTeamMatches(url string) ([]Match, error) {
 	var matches []Match
 
 	body, err := getRequestBody(url + "#tab-matchesBox")
@@ -304,6 +320,47 @@ func getTeamMatches(url string) ([]Match, error) {
 	return matches, nil
 }
 
+func (b *Bot) getTeamUrl(teamName string) string {
+	for _, team := range b.teams {
+		if strings.EqualFold(teamName, team.name) {
+			return team.url
+		}
+	}
+	return ""
+}
+
+func (b *Bot) displayCommands() (string, error) {
+	commands, err := b.db.getAllCommands()
+	if err != nil {
+		Log.Error(err.Error())
+	}
+	commandsDisplay := "Available commands \n"
+	for _, command := range commands {
+		commandsDisplay += fmt.Sprintf("```%s Syntax: %s Description: %s```", command.name, command.syntax, command.description)
+	}
+	return commandsDisplay, nil
+}
+
+func (b *Bot) displayAbout() string {
+	about := fmt.Sprintf(
+		"```HoulyTVBot version: %s ᕙ(⇀‸↼‶)ᕗ\nCode available on github: %s ```",
+		VERSION,
+		GITHUB,
+	)
+	return about
+}
+
+func (b *Bot) sendMessageToChannel(session *discordgo.Session, channelId string, content string) error {
+	if len(content) > 2000 {
+		return errors.New("Content string must be 2000 or fewer in length.")
+	}
+	_, err := session.ChannelMessageSend(channelId, content)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func getRequestBody(url string) (io.ReadCloser, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
@@ -332,24 +389,4 @@ func convertTimeZone(time string) string {
 		return fmt.Sprintf("%d:%s", TIMEZONE+hour+24, hourAndMinutes[1])
 	}
 	return fmt.Sprintf("%d:%s", TIMEZONE+hour, hourAndMinutes[1])
-}
-
-func (b *Bot) getTeamUrl(teamName string) string {
-	for _, team := range b.teams {
-		if strings.EqualFold(teamName, team.name) {
-			return team.url
-		}
-	}
-	return ""
-}
-
-func (b *Bot) sendMessageToChannel(session *discordgo.Session, channelId string, content string) error {
-	if len(content) > 2000 {
-		return errors.New("Content string must be 2000 or fewer in length.")
-	}
-	_, err := session.ChannelMessageSend(channelId, content)
-	if err != nil {
-		return err
-	}
-	return nil
 }

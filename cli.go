@@ -14,6 +14,12 @@ type Team struct {
 	url  string
 }
 
+type Command struct {
+	name        string
+	syntax      string
+	description string
+}
+
 func handleInput(db *DataBase, bot *Bot) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -30,9 +36,21 @@ func handleInput(db *DataBase, bot *Bot) {
 			if err != nil {
 				Log.Error(err.Error())
 			}
+		case "commands":
+			commands, err := db.getAllCommands()
+			if err != nil {
+				Log.Error(err.Error())
+			}
+			for i, command := range commands {
+				fmt.Printf("%d %s Syntax: %s Description: %s\n", i, command.name, command.syntax, command.description)
+			}
+		case "updatecommands":
+			updateCurrentCommands(db)
 		case "exit":
 			Log.Info("Exiting by user request")
 			os.Exit(1)
+		case "version":
+			fmt.Printf("Version: %s ᕙ(⇀‸↼‶)ᕗ\n", VERSION)
 		}
 	}
 }
@@ -71,4 +89,36 @@ func getTop30Teams(year, month, day string) ([]Team, error) {
 		})
 	})
 	return teams, nil
+}
+
+func updateCurrentCommands(db *DataBase) {
+	var commands []Command
+	commands = append(commands,
+		Command{
+			name:        "!team",
+			syntax:      "!team <team-name>",
+			description: "This command retrieves informations like roster, hltv ranking, next matches and recent results of a team.",
+		},
+		Command{
+			name:        "!matches",
+			syntax:      "!matches",
+			description: "This command retrieves ongoing and upcoming matches.",
+		},
+		Command{
+			name:        "!results",
+			syntax:      "!results",
+			description: "This command retrieves the most recent matches results.",
+		},
+		Command{
+			name:        "!help",
+			syntax:      "!help",
+			description: "This command shows the available commands with their syntax and description.",
+		},
+	)
+	for _, command := range commands {
+		err := db.createCommand(command)
+		if err != nil {
+			Log.Error("Failed when trying to update the command " + command.name + "  error: " + err.Error())
+		}
+	}
 }

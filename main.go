@@ -5,6 +5,8 @@ import (
 )
 
 const TIMEZONE int = -4
+const VERSION string = "v0.0.7"
+const GITHUB string = "github.com/guilhermeg2k/HouLyTVBot"
 
 func main() {
 	var db DataBase

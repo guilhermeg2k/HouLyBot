@@ -15,8 +15,8 @@ func (db *DataBase) setupDB() error {
 	}
 	createTableStatement := `
 		CREATE TABLE IF NOT EXISTS teams (
-			id INTEGER PRIMARY KEY, 
-			name TEXT UNIQUE NOT NULL, 
+			id INTEGER PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
 			url TEXT NOT NULL UNIQUE
 		);
 	`
@@ -26,9 +26,9 @@ func (db *DataBase) setupDB() error {
 	}
 	createTableStatement = `
 		CREATE TABLE IF NOT EXISTS commands (
-			id INTEGER PRIMARY KEY, 
+			id INTEGER PRIMARY KEY,
 			command TEXT UNIQUE NOT NULL UNIQUE,
-			syntax TEXT NOT NULL, 
+			syntax TEXT NOT NULL,
 			description TEXT NOT NULL
 		);
 	`
@@ -53,7 +53,42 @@ func (db *DataBase) setupDB() error {
 	return nil
 }
 
-func (db *DataBase) loadAllTeams() ([]Team, error) {
+func (db *DataBase) createCommand(command Command) error {
+	createCommand, err := db.DB.Prepare(`
+		INSERT INTO commands(
+			command,
+			syntax,
+			description
+		) VALUES (?,?,?)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = createCommand.Exec(command.name, command.syntax, command.description)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (db *DataBase) getAllCommands() ([]Command, error) {
+	var commands []Command
+	commandsQuery, err := db.DB.Query("select command, syntax, description from commands")
+	if err != nil {
+		return commands, err
+	}
+	for commandsQuery.Next() {
+		var command Command
+		err = commandsQuery.Scan(&command.name, &command.syntax, &command.description)
+		if err != nil {
+			Log.Error("Failed to get the command " + command.name + " error: " + err.Error())
+		}
+		commands = append(commands, command)
+	}
+	return commands, nil
+}
+
+func (db *DataBase) getAllTeams() ([]Team, error) {
 	var teams []Team
 	allTeams, err := db.DB.Query("SELECT name, url FROM teams")
 	if err != nil {

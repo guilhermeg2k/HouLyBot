@@ -63,6 +63,7 @@ func (l *Logger) FatalError(log string) {
 		time:    time.Now().Format("2006-01-02 15:04:05"),
 		log:     log,
 	})
+	panic(0)
 }
 
 func (l *Logger) log(log LogData) {
