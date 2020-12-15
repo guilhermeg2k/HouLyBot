@@ -61,6 +61,7 @@ func (l *Logger) FatalError(log string) {
 func (l *Logger) log(logData Log) {
 	err := l.Database.createLog(logData)
 	if err != nil {
+		log.Println("Failed to create a database log: " + err.Error())
 		log.Println(logData.time, logData.file, logData.text)
 	}
 }

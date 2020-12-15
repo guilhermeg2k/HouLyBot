@@ -346,7 +346,7 @@ func (bot *Bot) getTeamUrl(teamName string) string {
 }
 
 func (bot *Bot) commandsText() (string, error) {
-	commands, err := bot.db.getAllCommands()
+	commands, err := bot.db.getBotCommands()
 	if err != nil {
 		logger.Error(err.Error())
 	}
@@ -375,6 +375,28 @@ func (bot *Bot) sendMessageToChannel(channelId string, content string) error {
 		return err
 	}
 	return nil
+}
+
+func (bot *Bot) getTop30Teams(year, month, day string) ([]Team, error) {
+	var teams []Team
+	body, err := getRequestBody(fmt.Sprintf("https://www.hltv.org/ranking/teams/%s/%s/%s", year, month, day))
+	if err != nil {
+		return teams, err
+	}
+	doc, err := goquery.NewDocumentFromReader(body)
+	if err != nil {
+		return teams, err
+	}
+	doc.Find(".ranked-team.standard-box").Each(func(i int, s *goquery.Selection) {
+		name := strings.TrimSpace(s.Find(".name").Text())
+		url, _ := s.Find(".moreLink").Attr("href")
+		url = "https://www.hltv.org" + strings.TrimSpace(url)
+		teams = append(teams, Team{
+			name: name,
+			url:  url,
+		})
+	})
+	return teams, nil
 }
 
 func getRequestBody(url string) (io.ReadCloser, error) {

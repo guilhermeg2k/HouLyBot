@@ -2,14 +2,26 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/PuerkitoBio/goquery"
 )
 
-func handleInput(bot *Bot) {
+type Cli struct {
+	bot *Bot
+}
+
+func newCli(bot *Bot) (Cli, error) {
+	var cli Cli
+	if bot == nil {
+		return cli, errors.New("Bot can't be nil")
+	}
+	cli.bot = bot
+	return cli, nil
+}
+
+func (cli *Cli) handleInput() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("> ")
@@ -21,27 +33,29 @@ func handleInput(bot *Bot) {
 		commandArgs := strings.Split(command, " ")
 		switch commandArgs[0] {
 		case "populateteams":
-			err = populateTeamsWithTop30(bot.db, commandArgs[1], commandArgs[2], commandArgs[3])
+			err = cli.populateTeamsWithTop30(commandArgs[1], commandArgs[2], commandArgs[3])
 			if err != nil {
 				logger.Error(err.Error())
 			}
 		case "commands":
-			commands, err := bot.db.getAllCommands()
+			err = cli.showCommands()
 			if err != nil {
 				logger.Error(err.Error())
 			}
-			for i, command := range commands {
-				fmt.Printf("%d %s Syntax: %s Description: %s\n", i, command.name, command.syntax, command.description)
+		case "updatecommands":
+			err = cli.bot.db.updateCommands()
+			if err != nil {
+				logger.Error(err.Error())
 			}
-		case "createcommands":
-			createCommands(bot.db)
 		case "logs":
-			logs, err := bot.db.getAllLogs()
+			err = cli.showLogs(commandArgs[1:])
 			if err != nil {
 				logger.Error(err.Error())
 			}
-			for _, log := range logs {
-				fmt.Printf("[%s][%s]: %s\n", log.time, log.file, log.text)
+		case "help":
+			err = cli.showCliCommands()
+			if err != nil {
+				logger.Error(err.Error())
 			}
 		case "version":
 			fmt.Printf("Version: %s ᕙ(⇀‸↼‶)ᕗ\n", VERSION)
@@ -52,13 +66,13 @@ func handleInput(bot *Bot) {
 	}
 }
 
-func populateTeamsWithTop30(db *DataBase, year, month, day string) error {
-	top30Teams, err := getTop30Teams(year, month, day)
+func (cli *Cli) populateTeamsWithTop30(year, month, day string) error {
+	top30Teams, err := cli.bot.getTop30Teams(year, month, day)
 	if err != nil {
 		return err
 	}
 	for _, team := range top30Teams {
-		err := db.createTeam(team)
+		err := cli.bot.db.createTeam(team)
 		if err != nil {
 			logger.Error("Failed when trying to populate the team " + team.name + " with the url " + team.url + " error: " + err.Error())
 		}
@@ -66,56 +80,81 @@ func populateTeamsWithTop30(db *DataBase, year, month, day string) error {
 	return nil
 }
 
-func getTop30Teams(year, month, day string) ([]Team, error) {
-	var teams []Team
-	body, err := getRequestBody(fmt.Sprintf("https://www.hltv.org/ranking/teams/%s/%s/%s", year, month, day))
+func (cli *Cli) showCommands() error {
+	commands, err := cli.bot.db.getBotCommands()
 	if err != nil {
-		return teams, err
+		return err
 	}
-	doc, err := goquery.NewDocumentFromReader(body)
-	if err != nil {
-		return teams, err
+	for i, command := range commands {
+		fmt.Printf("%d %s Syntax: %s Description: %s\n", i, command.name, command.syntax, command.description)
 	}
-	doc.Find(".ranked-team.standard-box").Each(func(i int, s *goquery.Selection) {
-		name := strings.TrimSpace(s.Find(".name").Text())
-		url, _ := s.Find(".moreLink").Attr("href")
-		url = "https://www.hltv.org" + strings.TrimSpace(url)
-		teams = append(teams, Team{
-			name: name,
-			url:  url,
-		})
-	})
-	return teams, nil
+	return nil
 }
 
-func createCommands(db *DataBase) {
-	var commands []Command
-	commands = append(commands,
-		Command{
-			name:        "!team",
-			syntax:      "!team <team-name>",
-			description: "This command retrieves informations like roster, hltv ranking, next matches and recent results of a team.",
-		},
-		Command{
-			name:        "!matches",
-			syntax:      "!matches",
-			description: "This command retrieves ongoing and upcoming matches.",
-		},
-		Command{
-			name:        "!results",
-			syntax:      "!results",
-			description: "This command retrieves the most recent matches results.",
-		},
-		Command{
-			name:        "!commands",
-			syntax:      "!commands",
-			description: "This command shows the available commands with their syntax and description.",
-		},
-	)
-	for _, command := range commands {
-		err := db.createCommand(command)
-		if err != nil {
-			logger.Error("Failed when trying to update the command " + command.name + "  error: " + err.Error())
-		}
+func (cli *Cli) showCliCommands() error {
+	commands, err := cli.bot.db.getCliCommands()
+	if err != nil {
+		return err
 	}
+	for _, command := range commands {
+		fmt.Printf("%s - Syntax: %s\nDescription: %s\n\n", command.name, command.syntax, strings.ReplaceAll(command.description, "\\n", "\n"))
+	}
+	return nil
+}
+
+func (cli *Cli) showLogs(args []string) error {
+	var logs []Log
+	if len(args) > 0 {
+		var logType string
+		switch args[0] {
+		case "a":
+			logType = "-1"
+		case "i":
+			logType = "0"
+		case "w":
+			logType = "1"
+		case "e":
+			logType = "2"
+		}
+		if len(args) > 1 {
+			if strings.EqualFold(logType, "-1") {
+				_logs, err := cli.bot.db.getLogsWithLimit(args[1])
+				if err != nil {
+					return err
+				}
+				logs = _logs
+			} else {
+				_logs, err := cli.bot.db.getLogsByTypeWithLimit(logType, args[1])
+				if err != nil {
+					return err
+				}
+				logs = _logs
+			}
+		} else {
+			if strings.EqualFold(logType, "-1") {
+				_logs, err := cli.bot.db.getAllLogs()
+				if err != nil {
+					return err
+				}
+				logs = _logs
+			} else {
+				_logs, err := cli.bot.db.getLogsByType(logType)
+				if err != nil {
+					return err
+				}
+				logs = _logs
+			}
+		}
+	} else {
+		_logs, err := cli.bot.db.getAllLogs()
+		if err != nil {
+			return err
+		}
+		logs = _logs
+	}
+
+	for _, log := range logs {
+		fmt.Printf("[%s][%s]: %s\n", log.time, log.file, log.text)
+	}
+	return nil
 }
