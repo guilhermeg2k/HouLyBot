@@ -33,10 +33,17 @@ func (cli *Cli) handleInput() {
 		commandArgs := strings.Split(command, " ")
 		switch commandArgs[0] {
 		case "populateteams":
-			err = cli.populateTeamsWithTop30(commandArgs[1], commandArgs[2], commandArgs[3])
-			if err != nil {
-				logger.Error(err.Error())
+			if len(commandArgs) > 1 {
+				err = cli.populateTeamsWithTop30(commandArgs[1], commandArgs[2], commandArgs[3])
+				if err != nil {
+					fmt.Println("Failed to pupulate teams check logs for more information.")
+					logger.Error(err.Error())
+				}
+				fmt.Println("Completed.")
+			} else {
+				fmt.Println("Invalid syntax")
 			}
+
 		case "commands":
 			err = cli.showCommands()
 			if err != nil {

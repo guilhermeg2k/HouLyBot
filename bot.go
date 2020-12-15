@@ -34,7 +34,7 @@ type Match struct {
 
 type MatchTeam struct {
 	name  string
-	score string
+	score int
 }
 
 func newBot() (Bot, error) {
@@ -135,7 +135,7 @@ func (bot *Bot) recentResultsText() (string, error) {
 	resultsDisplay = "**Recent Results**\n```"
 	for _, match := range matches {
 		resultsDisplay += fmt.Sprintf(
-			"%s [%s] x [%s] %s\n",
+			"%s [%d] x [%d] %s\n",
 			match.firstTeam.name,
 			match.firstTeam.score,
 			match.secondTeam.score,
@@ -170,10 +170,20 @@ func (bot *Bot) getRecentResults() ([]Match, error) {
 		})
 		s.Find(".twoRowExtraRow").EachWithBreak(func(i int, ss *goquery.Selection) bool {
 			if i == 0 {
-				match.firstTeam.score = ss.Text()
+				score, err := strconv.Atoi(ss.Text())
+				if err != nil {
+					logger.Error(err.Error())
+					return false
+				}
+				match.firstTeam.score = score
 			}
 			if i == 1 {
-				match.secondTeam.score = ss.Text()
+				score, err := strconv.Atoi(ss.Text())
+				if err != nil {
+					logger.Error(err.Error())
+					return false
+				}
+				match.secondTeam.score = score
 				return false
 			}
 			return true
@@ -253,27 +263,38 @@ func (bot *Bot) teamText(teamName string) (string, error) {
 	}
 	display += " ]\n"
 	display += "**Next Matches**\n```"
-	if teamMatches[0].firstTeam.score != "-" {
+	if teamMatches[0].firstTeam.score != -1 {
 		display += "No upcoming matches, check back later."
 	}
 	i := 0
 	for {
-		if i > len(teamMatches)-1 || teamMatches[i].firstTeam.score != "-" {
+		if i > len(teamMatches)-1 || teamMatches[i].firstTeam.score != -1 {
 			break
 		}
 		display += fmt.Sprintf("[%s] %s x %s\n", teamMatches[i].date, teamMatches[i].firstTeam.name, teamMatches[i].secondTeam.name)
 		i++
 	}
 	//TODO: Handle when you don't have any recent match, which is rare
-	display += "```**Recent results**\n```"
+	display += "```**Recent results**\n```diff\n"
 	for i < len(teamMatches)-1 {
-		display += fmt.Sprintf("[%s] %s %s:%s %s\n",
-			teamMatches[i].date,
-			teamMatches[i].firstTeam.name,
-			teamMatches[i].firstTeam.score,
-			teamMatches[i].secondTeam.score,
-			teamMatches[i].secondTeam.name,
-		)
+		if teamMatches[i].firstTeam.score > teamMatches[i].secondTeam.score {
+			display += fmt.Sprintf("+ [%s] %s %d:%d %s\n",
+				teamMatches[i].date,
+				teamMatches[i].firstTeam.name,
+				teamMatches[i].firstTeam.score,
+				teamMatches[i].secondTeam.score,
+				teamMatches[i].secondTeam.name,
+			)
+		} else {
+			display += fmt.Sprintf("- [%s] %s %d:%d %s\n",
+				teamMatches[i].date,
+				teamMatches[i].firstTeam.name,
+				teamMatches[i].firstTeam.score,
+				teamMatches[i].secondTeam.score,
+				teamMatches[i].secondTeam.name,
+			)
+		}
+
 		i++
 	}
 	return display + "```", nil
@@ -320,10 +341,22 @@ func (bot *Bot) getTeamMatches(url string) ([]Match, error) {
 		match.date = strings.TrimSpace(s.Find(".date-cell").Text())
 		s.Find(".score").EachWithBreak(func(i int, s *goquery.Selection) bool {
 			if i == 0 {
-				match.firstTeam.score = s.Text()
+				score, err := strconv.Atoi(s.Text())
+				if err != nil {
+					match.firstTeam.score = -1
+					logger.Error(err.Error())
+					return false
+				}
+				match.firstTeam.score = score
 			}
 			if i == 1 {
-				match.secondTeam.score = s.Text()
+				score, err := strconv.Atoi(s.Text())
+				if err != nil {
+					match.secondTeam.score = -1
+					logger.Error(err.Error())
+					return false
+				}
+				match.secondTeam.score = score
 				return false
 			}
 			return true

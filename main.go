@@ -25,6 +25,6 @@ func main() {
 		log.Fatalln(err.Error())
 	}
 
-	fmt.Printf("\\ (•◡•) / HoulyTV Bot - <%s>\n", VERSION)
+	fmt.Printf("\\ (•◡•) / HouLyTV Bot - <%s>\n", VERSION)
 	cli.handleInput()
 }
