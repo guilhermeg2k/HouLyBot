@@ -15,10 +15,10 @@ import (
 )
 
 type Bot struct {
-	teams []Team
-	db    *DataBase
+	teams          []Team
+	db             *DataBase
+	discordSession *discordgo.Session
 }
-
 type TeamInfo struct {
 	name    string
 	country string
@@ -27,93 +27,108 @@ type TeamInfo struct {
 }
 
 type Match struct {
-	firstTeam  string
-	secondTeam string
-	score      []string
+	firstTeam  MatchTeam
+	secondTeam MatchTeam
 	date       string
 }
 
-func (b *Bot) setupBot(db *DataBase) error {
-	teams, err := db.getAllTeams()
-	if err != nil {
-		return err
-	}
-	b.teams = teams
-	b.db = db
-	go b.startBot()
-	return nil
+type MatchTeam struct {
+	name  string
+	score string
 }
 
-func (b *Bot) startBot() {
-	bot, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
+func newBot() (Bot, error) {
+	var bot Bot
+
+	db, err := newDataBase()
 	if err != nil {
-		Log.FatalError(err.Error())
+		return bot, err
 	}
-	err = bot.Open()
+	bot.db = &db
+
+	bot.teams, err = db.getAllTeams()
 	if err != nil {
-		Log.FatalError(err.Error())
+		return bot, err
 	}
-	bot.AddHandler(b.messageCreate)
-	Log.Info("BOT STARTED")
+
+	discordSession, err := discordgo.New("Bot " + os.Getenv("HOULY_TOKEN"))
+	if err != nil {
+		logger.FatalError(err.Error())
+	}
+	bot.discordSession = discordSession
+
+	go bot.startBot()
+	return bot, nil
 }
 
-func (b *Bot) messageCreate(session *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == session.State.User.ID {
+func (bot *Bot) startBot() {
+	err := bot.discordSession.Open()
+	if err != nil {
+		logger.FatalError(err.Error())
+	}
+	bot.discordSession.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
+		bot.onMessageCreate(m)
+	})
+	logger.Info("Bot successfully started")
+}
+
+func (bot *Bot) onMessageCreate(m *discordgo.MessageCreate) {
+	if m.Author.ID == bot.discordSession.State.User.ID {
 		return
 	}
 	command := strings.Split(m.Content, " ")
 	switch command[0] {
 	case "!team":
 		teamName := strings.Join(command[1:], " ")
-		displayTeam, err := b.displayTeam(teamName)
+		teamText, err := bot.teamText(teamName)
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
-		err = b.sendMessageToChannel(session, m.ChannelID, displayTeam)
+		err = bot.sendMessageToChannel(m.ChannelID, teamText)
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
 	case "!matches":
-		todayMatches, err := b.todayMatches(true)
+		todayMatchesText, err := bot.todayMatchesText()
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
-		err = b.sendMessageToChannel(session, m.ChannelID, todayMatches)
+		err = bot.sendMessageToChannel(m.ChannelID, todayMatchesText)
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
 	case "!results":
-		recentResults, err := b.recentResults()
-		if len(recentResults) > 2000 {
-			fmt.Println(recentResults)
+		recentResultsText, err := bot.recentResultsText()
+		if len(recentResultsText) > 2000 {
+			fmt.Println(recentResultsText)
 		}
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
-		err = b.sendMessageToChannel(session, m.ChannelID, recentResults)
+		err = bot.sendMessageToChannel(m.ChannelID, recentResultsText)
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
-	case "!help":
-		commandsDiplay, err := b.displayCommands()
+	case "!commands":
+		commandsText, err := bot.commandsText()
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
-		err = b.sendMessageToChannel(session, m.ChannelID, commandsDiplay)
+		err = bot.sendMessageToChannel(m.ChannelID, commandsText)
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
 	case "!about":
-		err := b.sendMessageToChannel(session, m.ChannelID, b.displayAbout())
+		err := bot.sendMessageToChannel(m.ChannelID, bot.aboutText())
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
 	}
 }
 
-func (b *Bot) recentResults() (string, error) {
+func (bot *Bot) recentResultsText() (string, error) {
 	var resultsDisplay string
-	matches, err := b.getRecentResults()
+	matches, err := bot.getRecentResults()
 	if err != nil {
 		return "", err
 	}
@@ -121,17 +136,17 @@ func (b *Bot) recentResults() (string, error) {
 	for _, match := range matches {
 		resultsDisplay += fmt.Sprintf(
 			"%s [%s] x [%s] %s\n",
-			match.firstTeam,
-			match.score[0],
-			match.score[1],
-			match.secondTeam,
+			match.firstTeam.name,
+			match.firstTeam.score,
+			match.secondTeam.score,
+			match.secondTeam.name,
 		)
 	}
 	resultsDisplay += "```"
 	return resultsDisplay, nil
 }
 
-func (b *Bot) getRecentResults() ([]Match, error) {
+func (bot *Bot) getRecentResults() ([]Match, error) {
 	var matches []Match
 	body, err := getRequestBody("https://www.hltv.org")
 	if err != nil {
@@ -141,25 +156,24 @@ func (b *Bot) getRecentResults() ([]Match, error) {
 	if err != nil {
 		return matches, err
 	}
-	doc.Find(".rightCol").Find(".result-box").Each(func(i int, s *goquery.Selection) {
+	doc.Find(".rightCol .result-box").Each(func(i int, s *goquery.Selection) {
 		var match Match
-		match.score = make([]string, 2)
 		s.Find(".team").EachWithBreak(func(i int, ss *goquery.Selection) bool {
 			if i == 0 {
-				match.firstTeam = ss.Text()
+				match.firstTeam.name = ss.Text()
 			}
 			if i == 1 {
-				match.secondTeam = ss.Text()
+				match.secondTeam.name = ss.Text()
 				return false
 			}
 			return true
 		})
 		s.Find(".twoRowExtraRow").EachWithBreak(func(i int, ss *goquery.Selection) bool {
 			if i == 0 {
-				match.score[0] = ss.Text()
+				match.firstTeam.score = ss.Text()
 			}
 			if i == 1 {
-				match.score[1] = ss.Text()
+				match.secondTeam.score = ss.Text()
 				return false
 			}
 			return true
@@ -169,21 +183,21 @@ func (b *Bot) getRecentResults() ([]Match, error) {
 	return matches, nil
 }
 
-func (b *Bot) todayMatches(matchFilter bool) (string, error) {
+func (bot *Bot) todayMatchesText() (string, error) {
 	var matchesDisplay string
-	matches, err := b.getTodayMatches()
+	matches, err := bot.getTodayMatches()
 	if err != nil {
 		return "", err
 	}
 	matchesDisplay = "**Today's Matches**\n```"
 	for _, match := range matches {
-		matchesDisplay += fmt.Sprintf("%s %s x %s\n", match.date, match.firstTeam, match.secondTeam)
+		matchesDisplay += fmt.Sprintf("%s %s x %s\n", match.date, match.firstTeam.name, match.secondTeam.name)
 	}
 	matchesDisplay += "```"
 	return matchesDisplay, nil
 }
 
-func (b *Bot) getTodayMatches() ([]Match, error) {
+func (bot *Bot) getTodayMatches() ([]Match, error) {
 	var matches []Match
 	body, err := getRequestBody("https://www.hltv.org/")
 	if err != nil {
@@ -193,14 +207,14 @@ func (b *Bot) getTodayMatches() ([]Match, error) {
 	if err != nil {
 		return matches, err
 	}
-	doc.Find(".rightCol").Find("aside").Find(".hotmatch-box").Each(func(i int, s *goquery.Selection) {
+	doc.Find(".rightCol aside .hotmatch-box").Each(func(i int, s *goquery.Selection) {
 		var match Match
 		s.Find(".team").EachWithBreak(func(i int, ss *goquery.Selection) bool {
 			if i == 0 {
-				match.firstTeam = ss.Text()
+				match.firstTeam.name = ss.Text()
 			}
 			if i == 1 {
-				match.secondTeam = ss.Text()
+				match.secondTeam.name = ss.Text()
 				return false
 			}
 			return true
@@ -211,7 +225,7 @@ func (b *Bot) getTodayMatches() ([]Match, error) {
 		} else {
 			match.date = "LIVE"
 		}
-		if match.firstTeam == "" {
+		if match.firstTeam.name == "" {
 			return
 		}
 		matches = append(matches, match)
@@ -219,17 +233,17 @@ func (b *Bot) getTodayMatches() ([]Match, error) {
 	return matches, nil
 }
 
-func (b *Bot) displayTeam(teamName string) (string, error) {
+func (bot *Bot) teamText(teamName string) (string, error) {
 	var display string
-	url := b.getTeamUrl(teamName)
+	url := bot.getTeamUrl(teamName)
 	if url == "" {
 		return "", errors.New("Team url not founded")
 	}
-	teamInfo, err := b.getTeamInfo(url)
+	teamInfo, err := bot.getTeamInfo(url)
 	if err != nil {
 		return "", err
 	}
-	teamMatches, err := b.getTeamMatches(url)
+	teamMatches, err := bot.getTeamMatches(url)
 	if err != nil {
 		return "", err
 	}
@@ -239,15 +253,15 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 	}
 	display += " ]\n"
 	display += "**Next Matches**\n```"
-	if teamMatches[0].score[0] != "-" {
+	if teamMatches[0].firstTeam.score != "-" {
 		display += "No upcoming matches, check back later."
 	}
 	i := 0
 	for {
-		if i > len(teamMatches)-1 || teamMatches[i].score[0] != "-" {
+		if i > len(teamMatches)-1 || teamMatches[i].firstTeam.score != "-" {
 			break
 		}
-		display += fmt.Sprintf("[%s] %s x %s\n", teamMatches[i].date, teamMatches[i].firstTeam, teamMatches[i].secondTeam)
+		display += fmt.Sprintf("[%s] %s x %s\n", teamMatches[i].date, teamMatches[i].firstTeam.name, teamMatches[i].secondTeam.name)
 		i++
 	}
 	//TODO: Handle when you don't have any recent match, which is rare
@@ -255,17 +269,17 @@ func (b *Bot) displayTeam(teamName string) (string, error) {
 	for i < len(teamMatches)-1 {
 		display += fmt.Sprintf("[%s] %s %s:%s %s\n",
 			teamMatches[i].date,
-			teamMatches[i].firstTeam,
-			teamMatches[i].score[0],
-			teamMatches[i].score[1],
-			teamMatches[i].secondTeam,
+			teamMatches[i].firstTeam.name,
+			teamMatches[i].firstTeam.score,
+			teamMatches[i].secondTeam.score,
+			teamMatches[i].secondTeam.name,
 		)
 		i++
 	}
 	return display + "```", nil
 }
 
-func (b *Bot) getTeamInfo(url string) (TeamInfo, error) {
+func (bot *Bot) getTeamInfo(url string) (TeamInfo, error) {
 	var teamInfo TeamInfo
 	var roster []string
 	body, err := getRequestBody(url)
@@ -287,7 +301,7 @@ func (b *Bot) getTeamInfo(url string) (TeamInfo, error) {
 	return teamInfo, nil
 }
 
-func (b *Bot) getTeamMatches(url string) ([]Match, error) {
+func (bot *Bot) getTeamMatches(url string) ([]Match, error) {
 	var matches []Match
 
 	body, err := getRequestBody(url + "#tab-matchesBox")
@@ -300,28 +314,30 @@ func (b *Bot) getTeamMatches(url string) ([]Match, error) {
 	}
 
 	doc.Find(".team-row").Each(func(i int, s *goquery.Selection) {
-		var score []string
-		team1 := strings.TrimSpace(s.Find(".team-1").Text())
-		team2 := strings.TrimSpace(s.Find(".team-2").Text())
-		date := strings.TrimSpace(s.Find(".date-cell").Text())
-		s.Find(".score").Each(func(i int, s *goquery.Selection) {
-			score = append(score, strings.TrimSpace(s.Text()))
+		var match Match
+		match.firstTeam.name = strings.TrimSpace(s.Find(".team-1").Text())
+		match.secondTeam.name = strings.TrimSpace(s.Find(".team-2").Text())
+		match.date = strings.TrimSpace(s.Find(".date-cell").Text())
+		s.Find(".score").EachWithBreak(func(i int, s *goquery.Selection) bool {
+			if i == 0 {
+				match.firstTeam.score = s.Text()
+			}
+			if i == 1 {
+				match.secondTeam.score = s.Text()
+				return false
+			}
+			return true
 		})
-		if strings.Contains(date, ":") {
-			date = convertTimeZone(date)
+		if strings.Contains(match.date, ":") {
+			match.date = convertTimeZone(match.date)
 		}
-		matches = append(matches, Match{
-			firstTeam:  team1,
-			secondTeam: team2,
-			date:       date,
-			score:      score,
-		})
+		matches = append(matches, match)
 	})
 	return matches, nil
 }
 
-func (b *Bot) getTeamUrl(teamName string) string {
-	for _, team := range b.teams {
+func (bot *Bot) getTeamUrl(teamName string) string {
+	for _, team := range bot.teams {
 		if strings.EqualFold(teamName, team.name) {
 			return team.url
 		}
@@ -329,10 +345,10 @@ func (b *Bot) getTeamUrl(teamName string) string {
 	return ""
 }
 
-func (b *Bot) displayCommands() (string, error) {
-	commands, err := b.db.getAllCommands()
+func (bot *Bot) commandsText() (string, error) {
+	commands, err := bot.db.getAllCommands()
 	if err != nil {
-		Log.Error(err.Error())
+		logger.Error(err.Error())
 	}
 	commandsDisplay := "Available commands \n"
 	for _, command := range commands {
@@ -341,7 +357,7 @@ func (b *Bot) displayCommands() (string, error) {
 	return commandsDisplay, nil
 }
 
-func (b *Bot) displayAbout() string {
+func (bot *Bot) aboutText() string {
 	about := fmt.Sprintf(
 		"```HoulyTVBot version: %s ᕙ(⇀‸↼‶)ᕗ\nCode available on github: %s ```",
 		VERSION,
@@ -350,11 +366,11 @@ func (b *Bot) displayAbout() string {
 	return about
 }
 
-func (b *Bot) sendMessageToChannel(session *discordgo.Session, channelId string, content string) error {
+func (bot *Bot) sendMessageToChannel(channelId string, content string) error {
 	if len(content) > 2000 {
 		return errors.New("Content string must be 2000 or fewer in length.")
 	}
-	_, err := session.ChannelMessageSend(channelId, content)
+	_, err := bot.discordSession.ChannelMessageSend(channelId, content)
 	if err != nil {
 		return err
 	}
@@ -379,7 +395,7 @@ func convertTimeZone(time string) string {
 	hourAndMinutes := strings.Split(time, ":")
 	hour, err := strconv.Atoi(hourAndMinutes[0])
 	if err != nil {
-		Log.Error("Failed to parse hour to int")
+		logger.Error("Failed to parse hour to int")
 		return ""
 	}
 	if TIMEZONE+hour == 0 {

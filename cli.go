@@ -9,48 +9,45 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-type Team struct {
-	name string
-	url  string
-}
-
-type Command struct {
-	name        string
-	syntax      string
-	description string
-}
-
-func handleInput(db *DataBase, bot *Bot) {
+func handleInput(bot *Bot) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("> ")
 		command, err := reader.ReadString('\n')
 		command = strings.Replace(command, "\n", "", -1)
 		if err != nil {
-			Log.Error(err.Error())
+			logger.Error(err.Error())
 		}
 		commandArgs := strings.Split(command, " ")
 		switch commandArgs[0] {
 		case "populateteams":
-			err = populateTeamsWithTop30(db, commandArgs[1], commandArgs[2], commandArgs[3])
+			err = populateTeamsWithTop30(bot.db, commandArgs[1], commandArgs[2], commandArgs[3])
 			if err != nil {
-				Log.Error(err.Error())
+				logger.Error(err.Error())
 			}
 		case "commands":
-			commands, err := db.getAllCommands()
+			commands, err := bot.db.getAllCommands()
 			if err != nil {
-				Log.Error(err.Error())
+				logger.Error(err.Error())
 			}
 			for i, command := range commands {
 				fmt.Printf("%d %s Syntax: %s Description: %s\n", i, command.name, command.syntax, command.description)
 			}
-		case "updatecommands":
-			updateCurrentCommands(db)
-		case "exit":
-			Log.Info("Exiting by user request")
-			os.Exit(1)
+		case "createcommands":
+			createCommands(bot.db)
+		case "logs":
+			logs, err := bot.db.getAllLogs()
+			if err != nil {
+				logger.Error(err.Error())
+			}
+			for _, log := range logs {
+				fmt.Printf("[%s][%s]: %s\n", log.time, log.file, log.text)
+			}
 		case "version":
 			fmt.Printf("Version: %s ᕙ(⇀‸↼‶)ᕗ\n", VERSION)
+		case "exit":
+			logger.Info("Exiting by user request")
+			os.Exit(1)
 		}
 	}
 }
@@ -61,9 +58,9 @@ func populateTeamsWithTop30(db *DataBase, year, month, day string) error {
 		return err
 	}
 	for _, team := range top30Teams {
-		err := db.createTeam(team.name, team.url)
+		err := db.createTeam(team)
 		if err != nil {
-			Log.Error("Failed when trying to populate the team " + team.name + " with the url " + team.url + " error: " + err.Error())
+			logger.Error("Failed when trying to populate the team " + team.name + " with the url " + team.url + " error: " + err.Error())
 		}
 	}
 	return nil
@@ -91,7 +88,7 @@ func getTop30Teams(year, month, day string) ([]Team, error) {
 	return teams, nil
 }
 
-func updateCurrentCommands(db *DataBase) {
+func createCommands(db *DataBase) {
 	var commands []Command
 	commands = append(commands,
 		Command{
@@ -110,15 +107,15 @@ func updateCurrentCommands(db *DataBase) {
 			description: "This command retrieves the most recent matches results.",
 		},
 		Command{
-			name:        "!help",
-			syntax:      "!help",
+			name:        "!commands",
+			syntax:      "!commands",
 			description: "This command shows the available commands with their syntax and description.",
 		},
 	)
 	for _, command := range commands {
 		err := db.createCommand(command)
 		if err != nil {
-			Log.Error("Failed when trying to update the command " + command.name + "  error: " + err.Error())
+			logger.Error("Failed when trying to update the command " + command.name + "  error: " + err.Error())
 		}
 	}
 }

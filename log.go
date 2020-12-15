@@ -2,73 +2,65 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"runtime"
 	"time"
 )
-
-var Log *Logger
-
-type LogData struct {
-	logType uint
-	file    string
-	time    string
-	log     string
-}
 
 type Logger struct {
 	Database *DataBase
 }
 
 func setupLogger(db *DataBase) {
-	Log = &Logger{
+	logger = &Logger{
 		Database: db,
 	}
 }
 
 func (l *Logger) Info(log string) {
 	_, file, line, _ := runtime.Caller(1)
-	l.log(LogData{
+	l.log(Log{
 		logType: 0,
 		file:    fmt.Sprintf("%s:%d", file, line),
 		time:    time.Now().Format("2006-01-02 15:04:05"),
-		log:     log,
+		text:    log,
 	})
 }
 
 func (l *Logger) Warning(log string) {
 	_, file, line, _ := runtime.Caller(1)
-	l.log(LogData{
+	l.log(Log{
 		logType: 1,
 		file:    fmt.Sprintf("%s:%d", file, line),
 		time:    time.Now().Format("2006-01-02 15:04:05"),
-		log:     log,
+		text:    log,
 	})
 }
 
 func (l *Logger) Error(log string) {
 	_, file, line, _ := runtime.Caller(1)
-	l.log(LogData{
+	l.log(Log{
 		logType: 2,
 		file:    fmt.Sprintf("%s:%d", file, line),
 		time:    time.Now().Format("2006-01-02 15:04:05"),
-		log:     log,
+		text:    log,
 	})
 }
 
 func (l *Logger) FatalError(log string) {
 	_, file, line, _ := runtime.Caller(1)
-	l.log(LogData{
+	l.log(Log{
 		logType: 3,
 		file:    fmt.Sprintf("%s:%d", file, line),
 		time:    time.Now().Format("2006-01-02 15:04:05"),
-		log:     log,
+		text:    log,
 	})
 	panic(0)
 }
 
-func (l *Logger) log(log LogData) {
-	err := l.Database.createLog(log)
+func (l *Logger) log(logData Log) {
+	err := l.Database.createLog(logData)
 	if err != nil {
-		fmt.Errorf(log.time, log.file, log.log)
+		log.Println(logData.time, logData.file, logData.text)
 	}
 }

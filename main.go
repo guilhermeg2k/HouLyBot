@@ -1,24 +1,18 @@
 package main
 
-import (
-	"fmt"
-)
+import "log"
 
 const TIMEZONE int = -4
 const VERSION string = "v0.0.7"
 const GITHUB string = "github.com/guilhermeg2k/HouLyTVBot"
 
+var logger *Logger
+
 func main() {
-	var db DataBase
-	var bot Bot
-	err := db.setupDB()
+	bot, err := newBot()
 	if err != nil {
-		fmt.Errorf(err.Error())
+		log.Fatalln(err.Error())
 	}
-	setupLogger(&db)
-	err = bot.setupBot(&db)
-	if err != nil {
-		Log.Error(err.Error())
-	}
-	handleInput(&db, &bot)
+	setupLogger(bot.db)
+	handleInput(&bot)
 }
